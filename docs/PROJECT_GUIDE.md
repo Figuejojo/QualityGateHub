@@ -95,6 +95,10 @@ flowchart TD
 
 The detailed design is in [ArchDesign/ARCHITECTURE_PROPOSAL.md](ArchDesign/ARCHITECTURE_PROPOSAL.md) and [ArchDesign/UML_DESIGN_PLAN.md](ArchDesign/UML_DESIGN_PLAN.md).
 
+The root [README](../README.md) includes a complete GitHub Actions example for
+posting results to `/api/ingest`, including runner networking requirements and
+the `if: always()` publishing pattern.
+
 ## Data Flow
 
 1. A pipeline sends JSON to `POST /api/ingest`.
