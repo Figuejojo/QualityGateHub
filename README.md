@@ -31,6 +31,56 @@ python Dashboard.py --db :memory: --no-seed
 python Dashboard.py --reset
 ```
 
+## Snapshot
+
+<img src="docs/dashboard_snapshot.png" alt="Quality Gate Dashboard" width="100%" />
+
+The dashboard presents a live matrix of workflow runs and checks. Each column is a recent pipeline run, and each row is a quality gate such as build, unit tests, coverage, or memory usage.
+
+```text
+Quality gates                                      Live
+
+DailyBuild
+┌────────────────────────────────────────────────────────────────────────────┐
+│ Check         │ 09:42 │ 09:05 │ 08:31 │ 07:58 │ 07:20 │ 06:55 │ 06:12 │
+├────────────────────────────────────────────────────────────────────────────┤
+│ build         │   ✓   │   ✓   │   ✓   │   ✓   │   ✓   │   ✗   │   ✓   │
+│ unit_test     │   ✓   │   ✓   │   ✗   │   ✓   │   ✓   │   ✓   │   ✓   │
+│ coverage      │  ▲84.7│  ▲83.9│  ▲82.4│  ▲81.2│  ▲80.6│  ▲79.8│  ▲78.9│
+│ static_analysis│   12  │   13  │   18  │   21  │   26  │   31  │   34  │
+│ flash_usage   │  ▼412.5KB │ ▼420.0KB │ ▼432.8KB │ ▼440.1KB │ ▼448.7KB │ ... │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+The UI uses a simple visual language:
+
+- Green check marks mean the gate passed.
+- Red X marks mean the gate failed.
+- Up/down arrows show trend direction for numeric checks.
+- The newest run is shown on the left, while older results move to the right.
+- The status indicator at the top shows whether the dashboard is receiving live updates.
+
+## How it operates
+
+```text
+GitHub Actions / CI job
+        │
+        │ POST JSON to /api/ingest
+        ▼
+Quality Gate Dashboard
+        │
+        ├─ validate payload and check metadata
+        ├─ queue request in the background worker
+        ├─ store latest results in SQLite
+        ├─ compare trend values to previous run or baseline
+        └─ push updates to the browser over Server-Sent Events (SSE)
+                        │
+                        ▼
+                Browser refreshes the dashboard grid
+```
+
+In practice, a pipeline posts a JSON payload with one or more checks. The backend accepts the data, updates the workflow history, and automatically registers new check names. The frontend listens for new events and updates the dashboard without reloading the page.
+
 ## GitHub Actions Integration
 
 A GitHub Actions job can push its results to `POST /api/ingest` after the
