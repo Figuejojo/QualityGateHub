@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quality gates</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28'%3E%3Ccircle cx='14' cy='14' r='11' fill='%23d4ebd9' stroke='%234c9b62' stroke-width='2'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #EEF1F4; --panel: #FFFFFF; --ink: #17212B; --muted: #66727F; --line: #D5DBE1; --hair: #EDF0F3;
+    --accent: #2F5DA8;
+    --label-w: 210px; --col-w: 62px; --row-h: 66px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.45 "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  }
+  .page { max-width: 1240px; margin: 0 auto; padding: 28px 24px 56px; }
+
+  .top { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+  h1 { font-size: 26px; font-weight: 600; letter-spacing: -0.01em; margin: 0; }
+  .sub { color: var(--muted); margin: 2px 0 0; }
+  .status { display: flex; align-items: center; gap: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #98A3AE; flex: none; }
+  .dot.live { background: #4C9B62; box-shadow: 0 0 0 3px rgba(76,155,98,.22); }
+  .dot.retry { background: #B58400; }
+
+  .tools { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; margin: 0 0 12px; }
+    .tabs { display: flex; gap: 0; align-items: flex-end; margin: 0 0 10px; overflow-x: auto; }
+    .tab { border: 1px solid var(--ink); border-bottom: 0; border-radius: 0; padding: 5px 18px; background: var(--panel); white-space: nowrap; }
+    .tab + .tab { margin-left: -1px; }
+    .tab.active { background: var(--ink); color: #fff; }
+  button {
+    font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--ink);
+    border-radius: 3px; padding: 6px 12px; cursor: pointer;
+  }
+  button:hover { background: #F3F6F9; }
+  button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .tools label { display: inline-flex; gap: 8px; align-items: center; cursor: pointer; }
+  input[type=checkbox] { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+
+  /* ---- the board ---- */
+  .board { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; overflow-x: auto; }
+  .grid {
+    display: grid; grid-template-columns: var(--label-w) repeat(var(--cols, 15), var(--col-w));
+    width: max-content; min-width: 100%;
+  }
+  .corner, .rowlabel { position: sticky; left: 0; z-index: 2; background: var(--panel); }
+  .rowlabel {
+    display: flex; flex-direction: column; justify-content: center; gap: 4px;
+    padding: 0 16px; border-top: 1px solid var(--hair); height: var(--row-h);
+  }
+  .labelbox {
+    border: 1px solid var(--ink); border-radius: 2px; padding: 6px 10px; text-align: center; font-weight: 500;
+    background: var(--panel);
+  }
+  .labelbox.ghost { border: 1px dashed #98A3AE; color: var(--muted); font-weight: 400; }
+  .cap { font-size: 11.5px; color: var(--muted); text-align: center; line-height: 1.2; }
+
+  .head {
+    display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 1px;
+    padding: 14px 0 8px; font-size: 12px; line-height: 1.25; font-variant-numeric: tabular-nums;
+  }
+  .head .d { font-weight: 600; }
+  .head .t, .head .sha { color: var(--muted); }
+  .head .sha { font-size: 11px; }
+
+  .cell { display: flex; align-items: center; justify-content: center; height: var(--row-h); border-top: 1px solid var(--hair); }
+  .cell.empty::after { content: ""; width: 5px; height: 5px; border-radius: 50%; background: #DDE2E7; }
+  .cell.none::after { content: ""; width: 10px; height: 2px; background: #DDE2E7; }
+  .cell.ghost::after { content: ""; width: 5px; height: 5px; border-radius: 50%; background: #E9EDF1; }
+  .cell[tabindex]:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; border-radius: 6px; }
+  .cell[tabindex] { cursor: default; }
+
+  .fresh { animation: arrive 2.4s ease-out; }
+  @keyframes arrive { 0% { background: rgba(91,130,192,.30); } 100% { background: transparent; } }
+  @media (prefers-reduced-motion: reduce) { .fresh { animation: none; } }
+
+  /* ---- icons: shape = what happened, colour = how much to worry ---- */
+  .ico { width: 26px; height: 26px; display: block; }
+  .ico .shape { fill: var(--fill); stroke: var(--stroke); stroke-width: 1.6; }
+  .ico .glyph { fill: none; stroke: var(--stroke); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .ico .glyph-fill { fill: var(--stroke); }
+    .ico .number { fill: var(--stroke); font: 600 10px/1 sans-serif; text-anchor: middle; dominant-baseline: middle; paint-order: stroke; stroke: var(--fill); stroke-width: 2.5px; }
+  .sev-good    { --fill: #D4EBD9; --stroke: #4C9B62; }
+  .sev-bad     { --fill: #F6D0CF; --stroke: #C8514F; }
+  .sev-neutral { --fill: #D8E5F8; --stroke: #5B82C0; }
+  .sev-warn    { --fill: #FBEFC0; --stroke: #B58400; }
+  .sev-none, .sev-skip { --fill: #EEF1F4; --stroke: #9AA5B0; }
+  .sev-skip .shape { stroke-dasharray: 3 2.5; }
+  .mini .ico { width: 18px; height: 18px; }
+
+  /* ---- tooltip ---- */
+  #tip {
+    position: fixed; z-index: 10; max-width: 260px; pointer-events: none;
+    background: var(--ink); color: #fff; border-radius: 4px; padding: 9px 11px; font-size: 12.5px; line-height: 1.4;
+  }
+  #tip[hidden] { display: none; }
+  #tip b { font-weight: 600; }
+  #tip .m { color: #B9C3CD; }
+
+  /* ---- legend + how-to ---- */
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 14px 40px; margin-top: 16px; padding: 14px 18px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  }
+  .legend h2 { font-size: 13px; font-weight: 600; margin: 0 0 8px; }
+  .legend ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .legend li { display: flex; align-items: center; gap: 9px; color: var(--muted); }
+  .howto { margin-top: 16px; }
+  .howto summary { cursor: pointer; font-weight: 500; width: max-content; }
+  .howto p { color: var(--muted); max-width: 70ch; margin: 8px 0; }
+  pre {
+    margin: 8px 0 0; padding: 12px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+    overflow-x: auto; font: 12.5px/1.5 Consolas, "Cascadia Mono", monospace;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="top">
+    <div>
+      <h1>Quality gates</h1>
+      <p class="sub">Last 15 pushes, oldest on the left</p>
+    </div>
+    <div class="status" aria-live="polite">
+      <span class="dot" id="dot"></span><span id="conn">Connecting</span>
+      <span id="last"></span>
+    </div>
+  </header>
+
+    <nav class="tabs" id="workflow-tabs" aria-label="Workflows"></nav>
+
+  <div class="tools">
+    <button id="send" type="button">Send simulated push</button>
+    <label><input type="checkbox" id="auto"> Auto-send every 4 s</label>
+  </div>
+
+  <div class="board"><div class="grid" id="grid"></div></div>
+
+  <section class="legend" aria-label="Legend">
+    <div><h2>Pass / fail</h2><ul id="lg-pf"></ul></div>
+    <div><h2>Direction vs baseline</h2><ul id="lg-dir"></ul></div>
+    <div><h2>Colour of a direction icon</h2><ul id="lg-col"></ul></div>
+  </section>
+
+  <details class="howto">
+    <summary>Push data from a pipeline</summary>
+    <p>POST JSON to <b id="url"></b>. Trend values are compared with the previous push unless you send a
+       <code>baseline</code>. A new check name adds a row; on its first push you can also send
+       <code>label</code>, <code>unit</code>, <code>polarity</code>, <code>tolerance</code> and <code>fail_delta</code>.</p>
+<pre>{
+    "workflow": "DailyCheck",
+  "commit": "a1b2c3d",
+  "branch": "develop",
+  "results": [
+    { "check": "build",           "status": "pass" },
+    { "check": "unit_test",       "status": "fail" },
+    { "check": "static_analysis", "value": 41 },
+    { "check": "coverage",        "value": 78.4, "baseline": 77.9 },
+    { "check": "flash_usage", "value": 412.5, "unit": "KB", "polarity": "lower_is_better",
+      "tolerance": 0.5, "fail_delta": 8, "label": "Flash usage" }
+  ]
+}</pre>
+  </details>
+</div>
+<div id="tip" role="tooltip" hidden></div>
+
+<script>
+const SLOTS = 15;
+const grid = document.getElementById('grid');
+const tip = document.getElementById('tip');
+const state = { data: null, lastId: null, lastReceived: null, workflow: null };
+
+/* ---------- icons ---------- */
+const SHAPES = {
+  circle: '<circle class="shape" cx="14" cy="14" r="11"/>',
+  up:     '<path class="shape" d="M14 3.5 L25.5 24.5 H2.5 Z" stroke-linejoin="round"/>',
+  down:   '<path class="shape" d="M2.5 3.5 H25.5 L14 24.5 Z" stroke-linejoin="round"/>',
+  same:   '<rect class="shape" x="3" y="5" width="22" height="8" rx="1.5"/><rect class="shape" x="3" y="15" width="22" height="8" rx="1.5"/>'
+};
+const GLYPHS = {
+  check: '<path class="glyph" d="M9 14.5 l3.6 3.6 L19 10.5"/>',
+  x:     '<path class="glyph" d="M10 10 L18 18 M18 10 L10 18"/>',
+  dash:  '<path class="glyph" d="M10 14 H18"/>',
+  dot:   '<circle class="glyph-fill" cx="14" cy="14" r="2.2"/>'
+};
+function svg(shape, sev, glyph, number) {
+  return '<svg class="ico sev-' + sev + '" viewBox="0 0 28 28" aria-hidden="true">' +
+                 SHAPES[shape] + (glyph ? GLYPHS[glyph] : '') +
+                 (number != null ? '<text class="number" x="14" y="14">' + esc(fmtNum(number)) + '</text>' : '') + '</svg>';
+}
+function iconFor(check, r) {
+  if (check.kind === 'pass_fail') {
+    if (r.status === 'pass') return svg('circle', 'good', 'check');
+    if (r.status === 'fail') return svg('circle', 'bad', 'x');
+    return svg('circle', 'skip', 'dash');
+  }
+  if (!r.direction) return svg('circle', 'none', 'dot');          // first value, nothing to compare with
+  const shape = r.direction === 'up' ? 'up' : r.direction === 'down' ? 'down' : 'same';
+    return svg(shape, r.severity, null, r.value);
+}
+
+/* ---------- helpers ---------- */
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtNum = n => Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100);
+const dateOf = iso => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+const timeOf = iso => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+const fullTime = iso => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+
+function caption(c) {
+  if (c.kind === 'pass_fail') return 'pass / fail';
+  return (c.unit ? c.unit + ', ' : '') + (c.polarity === 'higher_is_better' ? 'higher is better' : 'lower is better');
+}
+
+function describe(c, run, r) {
+  const lines = [];
+  const unit = c.unit ? ' ' + c.unit : '';
+  if (c.kind === 'pass_fail') {
+    lines.push(r.status === 'pass' ? 'Passed' : r.status === 'fail' ? 'Failed' : 'Skipped');
+  } else {
+    lines.push(r.value != null ? fmtNum(r.value) + unit : 'No value');
+    if (r.delta == null) {
+      lines.push('No baseline yet');
+    } else if (r.direction === 'same') {
+      lines.push('Unchanged, within the noise band (' + fmtNum(c.tolerance) + unit + ')');
+    } else {
+      const verdict = { good: 'better than baseline', warn: 'worse, under the fail limit', bad: 'worse, at or over the fail limit' }[r.severity];
+      lines.push((r.direction === 'up' ? 'Up ' : 'Down ') + fmtNum(Math.abs(r.delta)) + unit + ', ' + verdict);
+    }
+    if (r.baseline != null) lines.push('Baseline ' + fmtNum(r.baseline) + unit);
+  }
+  return lines;
+}
+
+/* ---------- render ---------- */
+function headCell(run, fresh) {
+  const t = run.ts;
+  return '<div class="head' + (fresh ? ' fresh' : '') + '"><span class="d">' + esc(dateOf(t)) + '</span>' +
+         '<span class="t">' + esc(timeOf(t)) + '</span><span class="sha">' + esc((run.commit || '').slice(0, 7)) + '</span></div>';
+}
+
+function cellHtml(c, run, fresh) {
+  if (!run) return '<div class="cell empty"></div>';
+  const r = run.results[c.name];
+  const f = fresh ? ' fresh' : '';
+  if (!r) return '<div class="cell none' + f + '"></div>';
+  const plain = c.label + ': ' + describe(c, run, r).join('. ');
+  return '<div class="cell' + f + '" tabindex="0" data-run="' + run.id + '" data-check="' + esc(c.name) + '" aria-label="' + esc(plain) + '">' +
+         iconFor(c, r) + '</div>';
+}
+
+function render(fresh) {
+  const d = state.data;
+  const pad = Math.max(SLOTS - d.runs.length, 0);
+  const cols = Array(pad).fill(null).concat(d.runs);         // newest run is always the right-most column
+  const lastIdx = cols.length - 1;
+  grid.style.setProperty('--cols', cols.length);
+
+  let h = '<div class="corner"></div>';
+  cols.forEach((r, i) => { h += r ? headCell(r, fresh && i === lastIdx) : '<div class="head"></div>'; });
+
+  d.checks.forEach(c => {
+    h += '<div class="rowlabel"><div class="labelbox">' + esc(c.label) + '</div><div class="cap">' + esc(caption(c)) + '</div></div>';
+    cols.forEach((r, i) => { h += cellHtml(c, r, fresh && i === lastIdx); });
+  });
+
+  h += '<div class="rowlabel"><div class="labelbox ghost">Others</div><div class="cap">new checks appear here</div></div>';
+  cols.forEach(() => { h += '<div class="cell ghost"></div>'; });
+
+  grid.innerHTML = h;
+  hideTip();
+
+  const newest = d.runs[d.runs.length - 1];
+  state.lastReceived = newest ? newest.received_at : null;
+  renderLast();
+}
+
+function renderLast() {
+  const el = document.getElementById('last');
+  const d = state.data;
+  if (!d || !d.runs.length) { el.textContent = 'No pushes yet'; return; }
+  const newest = d.runs[d.runs.length - 1];
+  const secs = Math.max(0, Math.round((Date.now() - new Date(state.lastReceived)) / 1000));
+  const ago = secs < 60 ? secs + ' s ago' : secs < 3600 ? Math.round(secs / 60) + ' min ago' : fullTime(state.lastReceived);
+  el.textContent = 'Last push ' + (newest.commit || '').slice(0, 7) + ', ' + ago + '. ' + d.total_runs + ' stored';
+}
+
+function renderTabs() {
+    const tabs = document.getElementById('workflow-tabs');
+    tabs.innerHTML = (state.data.workflows || []).map(name =>
+        '<button class="tab' + (name === state.workflow ? ' active' : '') + '" type="button" data-workflow="' + esc(name) + '">' + esc(name) + '</button>'
+    ).join('');
+}
+
+async function load(workflow) {
+    const selected = workflow || state.workflow || '';
+    const query = selected ? '&workflow=' + encodeURIComponent(selected) : '';
+    const res = await fetch('/api/dashboard?limit=' + SLOTS + query, { cache: 'no-store' });
+  state.data = await res.json();
+    state.workflow = state.data.workflow;
+    renderTabs();
+  const runs = state.data.runs;
+  const newest = runs.length ? runs[runs.length - 1].id : 0;
+  const fresh = state.lastId !== null && newest > state.lastId;
+  state.lastId = newest;
+  render(fresh);
+}
+
+document.getElementById('workflow-tabs').addEventListener('click', e => {
+    const tab = e.target.closest('[data-workflow]');
+    if (!tab) return;
+    state.lastId = null;
+    load(tab.dataset.workflow);
+});
+
+/* ---------- tooltip ---------- */
+function showTip(cell) {
+  const d = state.data; if (!d) return;
+  const run = d.runs.find(r => String(r.id) === cell.dataset.run);
+  const c = d.checks.find(x => x.name === cell.dataset.check);
+  const r = run && run.results[cell.dataset.check];
+  if (!run || !c || !r) return;
+  const body = describe(c, run, r);
+  tip.innerHTML = '<b>' + esc(c.label) + '</b><br>' + body.map(esc).join('<br>') +
+    '<div class="m">' + esc(run.commit) + (run.branch ? ' on ' + esc(run.branch) : '') + '<br>' + esc(fullTime(run.ts)) + '</div>';
+  tip.hidden = false;
+  const b = cell.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;
+  let x = b.left + b.width / 2 - w / 2;
+  x = Math.max(8, Math.min(x, window.innerWidth - w - 8));
+  let y = b.bottom + 6;
+  if (y + h > window.innerHeight - 8) y = b.top - h - 6;
+  tip.style.left = x + 'px'; tip.style.top = y + 'px';
+}
+function hideTip() { tip.hidden = true; }
+grid.addEventListener('mouseover', e => { const c = e.target.closest('.cell[data-run]'); if (c) showTip(c); });
+grid.addEventListener('mouseout',  e => { if (e.target.closest('.cell[data-run]')) hideTip(); });
+grid.addEventListener('focusin',   e => { const c = e.target.closest('.cell[data-run]'); if (c) showTip(c); });
+grid.addEventListener('focusout',  hideTip);
+
+/* ---------- live updates ---------- */
+function setConn(on) {
+  document.getElementById('dot').className = 'dot ' + (on ? 'live' : 'retry');
+  document.getElementById('conn').textContent = on ? 'Listening for pushes' : 'Reconnecting';
+}
+function connect() {
+  const es = new EventSource('/events');
+    es.addEventListener('hello', () => { setConn(true); load(state.workflow); });
+    es.addEventListener('run', () => load(state.workflow));
+  es.addEventListener('checks', load);
+  es.onerror = () => setConn(false);
+}
+
+/* ---------- demo controls ---------- */
+const send = () => fetch('/api/simulate', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ workflow: state.workflow })
+});
+document.getElementById('send').addEventListener('click', send);
+let timer = null;
+document.getElementById('auto').addEventListener('change', e => {
+  clearInterval(timer);
+  if (e.target.checked) { send(); timer = setInterval(send, 4000); }
+});
+
+/* ---------- legend ---------- */
+const li = (icon, text) => '<li><span class="mini">' + icon + '</span>' + text + '</li>';
+document.getElementById('lg-pf').innerHTML =
+  li(svg('circle', 'good', 'check'), 'Pass') + li(svg('circle', 'bad', 'x'), 'Fail') + li(svg('circle', 'skip', 'dash'), 'Skipped');
+document.getElementById('lg-dir').innerHTML =
+  li(svg('up', 'neutral'), 'Increase') + li(svg('same', 'neutral'), 'Same, within the noise band') + li(svg('down', 'neutral'), 'Decrease') +
+  li(svg('circle', 'none', 'dot'), 'No baseline yet');
+document.getElementById('lg-col').innerHTML =
+  li(svg('up', 'good'), 'Moved the good way') + li(svg('up', 'neutral'), 'Same') +
+  li(svg('up', 'warn'), 'Moved the bad way, under the fail limit') + li(svg('up', 'bad'), 'Moved the bad way, at or over the limit');
+document.getElementById('url').textContent = location.origin + '/api/ingest';
+
+setInterval(renderLast, 5000);
+load().then(connect);
+</script>
+</body>
+</html>
