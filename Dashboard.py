@@ -631,6 +631,7 @@ INDEX_HTML = r"""<!doctype html>
   .ico .shape { fill: var(--fill); stroke: var(--stroke); stroke-width: 1.6; }
   .ico .glyph { fill: none; stroke: var(--stroke); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   .ico .glyph-fill { fill: var(--stroke); }
+    .ico .number { fill: var(--stroke); font: 600 10px/1 sans-serif; text-anchor: middle; dominant-baseline: middle; paint-order: stroke; stroke: var(--fill); stroke-width: 2.5px; }
   .sev-good    { --fill: #D4EBD9; --stroke: #4C9B62; }
   .sev-bad     { --fill: #F6D0CF; --stroke: #C8514F; }
   .sev-neutral { --fill: #D8E5F8; --stroke: #5B82C0; }
@@ -731,9 +732,10 @@ const GLYPHS = {
   dash:  '<path class="glyph" d="M10 14 H18"/>',
   dot:   '<circle class="glyph-fill" cx="14" cy="14" r="2.2"/>'
 };
-function svg(shape, sev, glyph) {
+function svg(shape, sev, glyph, number) {
   return '<svg class="ico sev-' + sev + '" viewBox="0 0 28 28" aria-hidden="true">' +
-         SHAPES[shape] + (glyph ? GLYPHS[glyph] : '') + '</svg>';
+                 SHAPES[shape] + (glyph ? GLYPHS[glyph] : '') +
+                 (number != null ? '<text class="number" x="14" y="14">' + esc(fmtNum(number)) + '</text>' : '') + '</svg>';
 }
 function iconFor(check, r) {
   if (check.kind === 'pass_fail') {
@@ -743,7 +745,7 @@ function iconFor(check, r) {
   }
   if (!r.direction) return svg('circle', 'none', 'dot');          // first value, nothing to compare with
   const shape = r.direction === 'up' ? 'up' : r.direction === 'down' ? 'down' : 'same';
-  return svg(shape, r.severity);
+    return svg(shape, r.severity, null, r.value);
 }
 
 /* ---------- helpers ---------- */
