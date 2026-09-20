@@ -1,25 +1,47 @@
 # Quality Gate Dashboard
 
-## Run
+A standard-library Python dashboard for monitoring CI quality gates across
+workflows. Pipeline results are accepted through an HTTP API, processed by a
+background worker, stored in SQLite, and pushed to the browser through
+Server-Sent Events.
+
+## Start
+
+From the repository root:
 
 ```text
 python Dashboard.py
 ```
 
-`Dashboard.py` is only the application entry point. All backend and frontend
-implementation is kept under `src/`.
+Open <http://127.0.0.1:8080>.
 
-Open <http://127.0.0.1:8080> in a browser.
+Useful options:
 
-## Source layout
+```text
+python Dashboard.py --port 9000
+python Dashboard.py --db :memory: --no-seed
+python Dashboard.py --reset
+```
 
-- `src/backend/server.py` contains the HTTP server, validation, queue worker,
-  and SQLite persistence.
-- `src/frontend/index.html` contains the browser UI.
-- `src/tools/` contains small integration utilities; `tools/` contains example
-    payloads.
-- `docs/` contains design references.
+## Main Documentation
 
-The project is intentionally standard-library-only. Later phases can split the
-backend services and frontend JavaScript further without changing the HTTP
-contract.
+Read the [Project Guide](docs/PROJECT_GUIDE.md) for the current project
+structure, API payloads, database behavior, development rules, and instructions
+for adding new checks.
+
+Architecture planning is documented in:
+
+- [Architecture Proposal](docs/ArchDesign/ARCHITECTURE_PROPOSAL.md)
+- [UML Design Plan](docs/ArchDesign/UML_DESIGN_PLAN.md)
+
+## Project Shape
+
+- `Dashboard.py` is only the application entry point.
+- `src/backend/domain` contains models, policies, validation, and ports.
+- `src/backend/application` contains use cases and the background worker.
+- `src/backend/infrastructure` contains SQLite, queue, event, and clock adapters.
+- `src/backend/interfaces` contains HTTP, presentation, and frontend adapters.
+- `src/frontend/index.html` contains the dashboard UI.
+- `tools/` contains testing utilities and is outside the application architecture.
+
+The project intentionally uses Python's standard library only.

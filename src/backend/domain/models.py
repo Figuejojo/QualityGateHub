@@ -1,4 +1,6 @@
-"""Domain entities and value objects."""
+"""\file models.py
+\brief Domain entities and immutable value objects.
+"""
 
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -12,6 +14,9 @@ POLARITIES = ("higher_is_better", "lower_is_better")
 
 @dataclass(frozen=True)
 class CheckDefinition:
+    """\class CheckDefinition
+    \brief Configuration and display metadata for one quality check.
+    """
     name: str
     label: str
     kind: str
@@ -24,12 +29,18 @@ class CheckDefinition:
 
 @dataclass(frozen=True)
 class TrendVerdict:
+    """\class TrendVerdict
+    \brief Direction and severity calculated for a trend result.
+    """
     direction: Optional[str]
     severity: str
 
 
 @dataclass
 class CheckResult:
+    """\class CheckResult
+    \brief Observed result for one check in a run.
+    """
     check_name: str
     status: Optional[str] = None
     value: Optional[float] = None
@@ -41,6 +52,9 @@ class CheckResult:
 
 @dataclass
 class Run:
+    """\class Run
+    \brief A workflow execution containing check results.
+    """
     workflow: str
     commit: str
     branch: str
@@ -53,6 +67,9 @@ class Run:
 
 @dataclass(frozen=True)
 class IngestCommand:
+    """\class IngestCommand
+    \brief Validated, immutable command placed on the run queue.
+    """
     workflow: str
     commit: str
     branch: str
@@ -63,6 +80,9 @@ class IngestCommand:
 
 @dataclass(frozen=True)
 class EnqueueResult:
+    """\class EnqueueResult
+    \brief Public result returned after a run is queued.
+    """
     workflow: str
     commit: str
     queue_depth: int
@@ -70,6 +90,9 @@ class EnqueueResult:
 
 @dataclass(frozen=True)
 class DashboardView:
+    """\class DashboardView
+    \brief Data required to render a dashboard workflow.
+    """
     checks: list
     runs: list
     total_runs: int

@@ -1,4 +1,5 @@
-"""Compatibility module for the refactored dashboard backend.
+"""\file server.py
+\brief Compatibility module for the refactored dashboard backend.
 
 The implementation is organized under domain, application, infrastructure,
 and interfaces. New code should import the composition root from bootstrap.

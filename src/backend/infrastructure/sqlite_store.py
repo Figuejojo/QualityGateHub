@@ -1,4 +1,6 @@
-"""SQLite repository adapter."""
+"""\file sqlite_store.py
+\brief SQLite implementations of the dashboard repository ports.
+"""
 
 import sqlite3
 import threading
@@ -17,9 +19,17 @@ DEFAULT_CHECKS = [
 
 
 class SqliteStore:
-    """Implements focused check and run repository protocols over SQLite."""
+    """\class SqliteStore
+    \brief Implements check and run repository protocols over SQLite.
+    """
 
     def __init__(self, path, keep, trend_policy=None, clock=None):
+        """\brief Open or create the dashboard database.
+        \param path SQLite database path or ``:memory:``.
+        \param keep Maximum runs retained per workflow.
+        \param trend_policy Policy used to judge trend deltas.
+        \param clock Clock used for received timestamps.
+        """
         self.keep = keep
         self.lock = threading.RLock()
         self.db = sqlite3.connect(path, check_same_thread=False)
@@ -29,6 +39,7 @@ class SqliteStore:
         self._initialize()
 
     def _initialize(self):
+        """\brief Create the schema and insert default check definitions."""
         with self.lock:
             self.db.executescript(
                 """
@@ -62,19 +73,35 @@ class SqliteStore:
             self.db.commit()
 
     def check_kinds(self):
+        """\brief Return registered check names and kinds.
+        \return Mapping from check name to ``pass_fail`` or ``trend``.
+        """
         with self.lock:
             return {row["name"]: row["kind"] for row in self.db.execute("SELECT name, kind FROM checks")}
 
     def get(self, name):
+        """\brief Retrieve one check definition.
+        \param name Check name.
+        \return Dictionary representation, or ``None``.
+        """
         with self.lock:
             row = self.db.execute("SELECT * FROM checks WHERE name=?", (name,)).fetchone()
             return dict(row) if row else None
 
     def list_checks(self):
+        """\brief List checks in dashboard display order.
+        \return List of check dictionaries.
+        """
         with self.lock:
             return [dict(row) for row in self.db.execute("SELECT * FROM checks ORDER BY position, name")]
 
     def _register(self, name, kind, config):
+        """\brief Register a previously unknown check internally.
+        \param name Check name.
+        \param kind Check type.
+        \param config Optional display and threshold configuration.
+        \return Persisted check dictionary.
+        """
         position = self.db.execute("SELECT COALESCE(MAX(position),0)+1 FROM checks").fetchone()[0]
         label = config.get("label") or name.replace("_", " ").replace("-", " ").title()
         self.db.execute(
@@ -85,6 +112,10 @@ class SqliteStore:
         return self.get(name)
 
     def upsert(self, body):
+        """\brief Create or update a check definition.
+        \param body Validated check configuration.
+        \return Persisted check dictionary.
+        """
         name = body.get("name")
         with self.lock:
             existing = self.get(name)
@@ -101,6 +132,10 @@ class SqliteStore:
             return self.get(name)
 
     def add_run(self, command):
+        """\brief Persist a validated command and calculate trend verdicts.
+        \param command Validated ingest command.
+        \return Assigned database run identifier.
+        """
         with self.lock:
             received_at = self.clock.now_iso() if self.clock else utc_now_iso()
             cursor = self.db.execute(
@@ -137,6 +172,7 @@ class SqliteStore:
             return run_id
 
     def _trim_history(self):
+        """\brief Enforce per-workflow retention limits."""
         workflows = [row[0] for row in self.db.execute("SELECT DISTINCT workflow FROM runs")]
         for workflow in workflows:
             old = self.db.execute("SELECT id FROM runs WHERE workflow=? ORDER BY id DESC LIMIT -1 OFFSET ?", (workflow, self.keep)).fetchall()
@@ -147,10 +183,17 @@ class SqliteStore:
                 self.db.execute("DELETE FROM runs WHERE id IN (%s)" % marks, old_ids)
 
     def count_runs(self):
+        """\brief Count all stored runs.
+        \return Number of runs in the database.
+        """
         with self.lock:
             return self.db.execute("SELECT COUNT(*) FROM runs").fetchone()[0]
 
     def last_values(self, workflow=DEFAULT_WORKFLOW):
+        """\brief Return the latest trend values for a workflow.
+        \param workflow Workflow name.
+        \return Mapping from check name to latest numeric value.
+        """
         with self.lock:
             rows = self.db.execute(
                 "SELECT check_name, value FROM results WHERE value IS NOT NULL AND run_id IN "
@@ -159,6 +202,11 @@ class SqliteStore:
             return {row["check_name"]: row["value"] for row in rows}
 
     def dashboard(self, limit, workflow=DEFAULT_WORKFLOW):
+        """\brief Build dashboard data for one workflow.
+        \param limit Maximum number of runs to return.
+        \param workflow Workflow name.
+        \return JSON-compatible dashboard view dictionary.
+        """
         with self.lock:
             workflows = [row[0] for row in self.db.execute("SELECT DISTINCT workflow FROM runs")]
             if DEFAULT_WORKFLOW not in workflows:

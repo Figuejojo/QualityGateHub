@@ -1,6 +1,7 @@
 # Quality Gate Dashboard Architecture Proposal
 
-> Proposal only. No production code has been changed as part of this document.
+> Baseline architecture. The layered refactor described here is now implemented
+> in `src/backend`; future changes should preserve these boundaries.
 
 ## Goals
 
@@ -10,9 +11,9 @@
 - Make infrastructure replaceable, especially SQLite, the in-memory queue, and SSE.
 - Preserve the standard-library-only runtime constraint.
 
-## Current Responsibilities
+## Original Responsibilities
 
-`src/backend/server.py` currently contains all of these concerns:
+Before the refactor, `src/backend/server.py` contained all of these concerns:
 
 - Domain rules: trend verdicts, timestamps, and payload validation.
 - Persistence: SQLite schema, check registration, run history, and queries.
@@ -21,7 +22,8 @@
 - Composition: configuration, database creation, worker startup, and server startup.
 - Frontend asset loading.
 
-The first refactor should separate these responsibilities without changing endpoint behavior.
+Those responsibilities are now separated across the domain, application,
+infrastructure, and interfaces packages without changing endpoint behavior.
 
 ## Proposed Structure
 
@@ -63,8 +65,8 @@ src/
 
   frontend/
     index.html
-    app.js                            # Phase 2: browser behavior extracted from HTML
-    styles.css                        # Phase 2: styles extracted from HTML
+    app.js                            # Future optional browser behavior split
+    styles.css                        # Future optional stylesheet split
 ```
 
 ## Mermaid Overview
@@ -215,22 +217,22 @@ sequenceDiagram
     HTTP-->>Browser: JSON
 ```
 
-## Migration Phases
+## Refactor Status and Future Phases
 
-1. **Extract domain primitives**: move models, validation, and verdict policy;
-   preserve existing behavior with focused unit tests.
-2. **Introduce ports**: define repository, queue, event, and clock interfaces;
-   adapt the existing implementations behind them.
-3. **Extract application services**: move ingest, dashboard, checks, simulation,
-   and worker workflows out of the HTTP module.
-4. **Extract HTTP adapters**: leave routing and protocol translation in the
-   interface layer; keep endpoint paths and response shapes unchanged.
-5. **Create the composition root**: move startup configuration into
-   `bootstrap.py`; make `Dashboard.py` call only the bootstrap entry point.
-6. **Split frontend assets**: extract JavaScript and CSS from `index.html` once
-   the backend contract is stable.
-7. **Remove compatibility code**: delete obsolete functions and globals only
-   after tests cover the replacement paths.
+1. **Completed: extract domain primitives**: models, validation, and policies
+  live under `src/backend/domain`.
+2. **Completed: introduce ports and adapters**: repository, queue, event, and
+  clock protocols are implemented by infrastructure adapters.
+3. **Completed: extract application services**: ingest, dashboard, checks,
+  simulation, and worker workflows are independent of HTTP.
+4. **Completed: extract HTTP adapters**: routing and serialization live under
+  `src/backend/interfaces`.
+5. **Completed: create the composition root**: `bootstrap.py` builds the
+  application and `Dashboard.py` delegates to it.
+6. **Future: split frontend assets**: extract JavaScript and CSS from
+  `index.html` if browser code grows enough to justify separate files.
+7. **Future: remove compatibility wrapper**: remove `server.py` only after
+  downstream imports no longer depend on it.
 
 ## Review Decisions Needed
 

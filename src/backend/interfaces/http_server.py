@@ -1,4 +1,6 @@
-"""HTTP interface adapter for the dashboard application."""
+"""\file http_server.py
+\brief Standard-library HTTP adapter for dashboard application services.
+"""
 
 import json
 from http.server import BaseHTTPRequestHandler
@@ -10,15 +12,27 @@ from .presenters import JsonPresenter, SsePresenter
 
 
 class DashboardHttpHandler(BaseHTTPRequestHandler):
+    """\class DashboardHttpHandler
+    \brief Translate HTTP requests into application service calls.
+
+    The handler contains protocol concerns only; persistence and business rules
+    are supplied through the configured application service object.
+    """
     server_version = "GateBoard/0.1"
     services = None
     json_presenter = JsonPresenter()
     sse_presenter = SsePresenter()
 
     def log_message(self, fmt, *args):
+        """\brief Suppress default request logging."""
         pass
 
     def _send(self, code, body, content_type=None):
+        """\brief Send a response body with standard dashboard headers.
+        \param code HTTP status code.
+        \param body Bytes, text, or JSON-compatible response value.
+        \param content_type Optional explicit content type.
+        """
         if isinstance(body, (dict, list)):
             body = self.json_presenter.render(body)
             content_type = content_type or self.json_presenter.content_type
@@ -32,6 +46,10 @@ class DashboardHttpHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _read_json(self):
+        """\brief Read and decode the bounded JSON request body.
+        \return Parsed JSON value.
+        	hrows ValueError If the body is empty, oversized, or malformed.
+        """
         try:
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
@@ -46,6 +64,7 @@ class DashboardHttpHandler(BaseHTTPRequestHandler):
             raise ValueError("invalid JSON: %s" % exc)
 
     def do_GET(self):
+        """\brief Route dashboard page, query, health, and SSE GET requests."""
         url = urlparse(self.path)
         if url.path in ("/", "/index.html"):
             self._send(200, self.services.frontend.read(), "text/html; charset=utf-8")
@@ -67,6 +86,7 @@ class DashboardHttpHandler(BaseHTTPRequestHandler):
             self._send(404, {"error": "not found"})
 
     def do_POST(self):
+        """\brief Route ingest, simulation, and check configuration requests."""
         path = urlparse(self.path).path
         try:
             if path == "/api/ingest":
@@ -90,6 +110,7 @@ class DashboardHttpHandler(BaseHTTPRequestHandler):
             self._send(400, {"error": str(exc)})
 
     def _sse(self):
+        """\brief Stream live event-hub messages to one browser connection."""
         self.send_response(200)
         self.send_header("Content-Type", self.sse_presenter.content_type)
         self.send_header("Cache-Control", "no-cache")
@@ -116,6 +137,10 @@ class DashboardHttpHandler(BaseHTTPRequestHandler):
 
 
 def handler_for(services):
+    """\brief Bind application services to a request-handler class.
+    \param services Configured ``Application`` service container.
+    \return Handler subclass suitable for ``ThreadingHTTPServer``.
+    """
     class ConfiguredDashboardHandler(DashboardHttpHandler):
         pass
 

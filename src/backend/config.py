@@ -1,4 +1,6 @@
-"""Application configuration."""
+"""\file config.py
+\brief Command-line configuration for the dashboard process.
+"""
 
 import argparse
 import os
@@ -7,6 +9,9 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class Config:
+    """\class Config
+    \brief Immutable runtime configuration.
+    """
     host: str
     port: int
     db: str
@@ -16,6 +21,10 @@ class Config:
 
 
 def parse_config(argv=None):
+    """\brief Parse command-line arguments into a ``Config`` object.
+    \param argv Optional argument list; ``None`` uses process arguments.
+    \return Parsed immutable configuration.
+    """
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     parser = argparse.ArgumentParser(description="Quality-gate dashboard")
     parser.add_argument("--host", default="127.0.0.1", help="bind address (default 127.0.0.1 = this machine only)")

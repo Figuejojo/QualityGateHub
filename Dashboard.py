@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Application entry point; implementation lives under ``src``."""
+"""\file Dashboard.py
+\brief Process entry point for the Quality Gate Dashboard.
+
+The implementation lives under ``src``. This file only prepares imports and
+delegates startup to the composition root.
+"""
 
 import os
 import sys

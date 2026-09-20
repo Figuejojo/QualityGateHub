@@ -1,4 +1,6 @@
-"""Validation and normalization at the application boundary."""
+"""\file validators.py
+\brief Validate and normalize payloads at the application boundary.
+"""
 
 import math
 import re
@@ -14,16 +16,30 @@ DEFAULT_WORKFLOW = "Example"
 
 
 def _number(value, field):
+    """\brief Validate and convert a numeric input.
+    \param value Candidate numeric value.
+    \param field Field name used in validation errors.
+    \return The value converted to ``float``.
+    	hrows ValueError If the value is not finite numeric data.
+    """
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
         raise ValueError("'%s' must be a finite number" % field)
     return float(value)
 
 
 def utc_now_iso():
+    """\brief Return the current UTC time in API ISO-8601 format.
+    \return Timestamp ending in ``Z`` with millisecond precision.
+    """
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
 def parse_timestamp(value):
+    """\brief Normalize an ISO-8601 or epoch timestamp.
+    \param value Input timestamp, or ``None`` for the current time.
+    \return UTC timestamp in the dashboard storage format.
+    	hrows ValueError If the timestamp cannot be parsed.
+    """
     if value is None:
         return utc_now_iso()
     try:
@@ -39,10 +55,23 @@ def parse_timestamp(value):
 
 
 class PayloadValidator:
+    """\class PayloadValidator
+    \brief Convert raw JSON payloads into validated ingest commands.
+    """
+
     def __init__(self, status_policy=None):
+        """\brief Create a validator with an injectable status policy.
+        \param status_policy Policy used to normalize status aliases.
+        """
         self.status_policy = status_policy or StatusPolicy()
 
     def validate(self, obj, known_kinds):
+        """\brief Validate and normalize one ingest payload.
+        \param obj Raw JSON object from the HTTP boundary.
+        \param known_kinds Mapping of registered check names to their kinds.
+        \return Immutable ``IngestCommand`` for the queue.
+        	hrows ValueError If the payload violates the API contract.
+        """
         if not isinstance(obj, dict):
             raise ValueError("body must be a JSON object")
         results = obj.get("results")
@@ -96,6 +125,11 @@ class PayloadValidator:
 
     @staticmethod
     def _config(result, where):
+        """\brief Extract optional check configuration from one result.
+        \param result Raw result object.
+        \param where Location string used in validation messages.
+        \return Configuration dictionary for check registration.
+        """
         config = {}
         if "label" in result:
             config["label"] = str(result["label"])[:60]

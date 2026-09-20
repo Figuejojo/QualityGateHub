@@ -1,4 +1,6 @@
-"""Composition root for the dashboard application."""
+"""\file bootstrap.py
+\brief Composition root that assembles and starts the application.
+"""
 
 import os
 import threading
@@ -21,7 +23,14 @@ from .interfaces.http_server import handler_for
 
 
 class Application:
+    """\class Application
+    \brief Construct the concrete adapters and application services.
+    """
+
     def __init__(self, config):
+        """\brief Assemble the application object graph.
+        \param config Runtime configuration.
+        """
         if config.reset and config.db != ":memory:" and os.path.exists(config.db):
             os.remove(config.db)
         self.clock = SystemClock()
@@ -37,6 +46,9 @@ class Application:
         self.worker = RunWorker(self.queue, self.store, self.events)
 
     def seed(self, count=SLOTS):
+        """\brief Seed an empty database with demo runs.
+        \param count Number of demo runs to create.
+        """
         now = datetime.now(timezone.utc)
         for index in range(count):
             timestamp = (now - timedelta(minutes=(count - index) * 23)).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -46,10 +58,14 @@ class Application:
             self.store.add_run(command)
 
     def start(self):
+        """\brief Start the asynchronous run worker."""
         self.worker.start()
 
 
 def main(argv=None):
+    """\brief Parse configuration, assemble services, and serve HTTP.
+    \param argv Optional command-line arguments.
+    """
     config = parse_config(argv)
     application = Application(config)
     if not config.no_seed and application.store.count_runs() == 0:

@@ -1,4 +1,6 @@
-"""Demo run generation use case."""
+"""\file simulation_service.py
+\brief Application service for generating demo pipeline runs.
+"""
 
 import random
 
@@ -7,19 +9,37 @@ from ..domain.validators import DEFAULT_WORKFLOW, PayloadValidator
 
 
 class SimulationService:
+    """\class SimulationService
+    \brief Generate realistic demo results and enqueue them.
+    """
+
     def __init__(self, runs, checks, queue, validator=None):
+        """\brief Construct the simulator with injected repositories and queue.
+        \param runs Run repository used for previous trend values.
+        \param checks Check repository.
+        \param queue Run queue.
+        \param validator Optional payload validator.
+        """
         self.runs = runs
         self.checks = checks
         self.queue = queue
         self.validator = validator or PayloadValidator()
 
     def simulate(self, workflow=DEFAULT_WORKFLOW):
+        """\brief Generate and enqueue a simulated run.
+        \param workflow Workflow name for the generated run.
+        \return EnqueueResult for the generated command.
+        """
         payload = self._payload(workflow)
         command = self.validator.validate(payload, self.checks.check_kinds())
         self.queue.put(command)
         return EnqueueResult(command.workflow, command.commit, self.queue.qsize())
 
     def _payload(self, workflow):
+        """\brief Build a random payload informed by the previous run.
+        \param workflow Workflow name whose trend values seed the simulation.
+        \return Raw payload suitable for ``PayloadValidator``.
+        """
         previous = self.runs.last_values(workflow)
         static_analysis = previous.get("static_analysis", 42.0)
         coverage = previous.get("coverage", 71.0)

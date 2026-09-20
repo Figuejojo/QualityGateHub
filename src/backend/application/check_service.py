@@ -1,4 +1,6 @@
-"""Check configuration use case."""
+"""\file check_service.py
+\brief Application service for registering and tuning checks.
+"""
 
 import math
 import re
@@ -10,10 +12,22 @@ CHECK_NAME_RE = re.compile(r"^[A-Za-z0-9_.\-]{1,40}$")
 
 
 class CheckService:
+    """\class CheckService
+    \brief Validate check configuration and delegate persistence.
+    """
+
     def __init__(self, checks):
+        """\brief Construct the service with a check repository.
+        \param checks Check repository port.
+        """
         self.checks = checks
 
     def upsert(self, payload):
+        """\brief Create or update a check definition.
+        \param payload Check configuration received from the API.
+        \return Persisted check definition.
+        	hrows ValueError If the configuration is invalid.
+        """
         if not isinstance(payload, dict):
             raise ValueError("body must be a JSON object")
         name = payload.get("name")

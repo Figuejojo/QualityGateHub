@@ -1,13 +1,13 @@
 # Quality Gate Dashboard UML Design Plan
 
-> Planning document only. This defines the proposed code connections before the
-> OOP/SOLID refactor is implemented.
+> Design reference. The main class connections are implemented; this document
+> remains the map for future changes and further decomposition.
 
 ## Purpose
 
 This document translates the architecture proposal into classes, interfaces,
-and code ownership. The first implementation should preserve the existing HTTP
-contract while replacing the current `server.py` responsibilities with focused
+and code ownership. The implementation preserves the existing HTTP contract
+while replacing the former monolithic `server.py` responsibilities with focused
 objects.
 
 ## Package-to-Class Map
@@ -31,8 +31,7 @@ objects.
 | `application.check_service` | `CheckService` | Creates and updates check definitions. |
 | `application.simulation_service` | `SimulationService` | Builds demo payloads and queues them. |
 | `application.worker` | `RunWorker` | Persists queued commands and publishes events. |
-| `infrastructure.sqlite_store` | `SqliteCheckRepository` | SQLite implementation of `CheckRepository`. |
-| `infrastructure.sqlite_store` | `SqliteRunRepository` | SQLite implementation of `RunRepository`. |
+| `infrastructure.sqlite_store` | `SqliteStore` | SQLite implementation of both repository protocols. |
 | `infrastructure.memory_queue` | `MemoryRunQueue` | Thread-safe in-process queue adapter. |
 | `infrastructure.event_hub` | `SseEventPublisher` | In-process subscriber fan-out for SSE. |
 | `infrastructure.clock` | `SystemClock` | Production UTC clock. |
@@ -134,8 +133,7 @@ classDiagram
         +now() datetime
     }
 
-    class SqliteCheckRepository
-    class SqliteRunRepository
+    class SqliteStore
     class MemoryRunQueue
     class SseEventPublisher
     class SystemClock
@@ -163,8 +161,8 @@ classDiagram
     RunWorker --> TrendPolicy
     RunWorker --> Clock
 
-    SqliteCheckRepository ..|> CheckRepository
-    SqliteRunRepository ..|> RunRepository
+    SqliteStore ..|> CheckRepository
+    SqliteStore ..|> RunRepository
     MemoryRunQueue ..|> RunQueue
     SseEventPublisher ..|> EventPublisher
     SystemClock ..|> Clock
@@ -177,8 +175,7 @@ classDiagram
     DashboardHttpHandler --> FrontendProvider
     Application --> DashboardHttpHandler
     Application --> RunWorker
-    Application --> SqliteCheckRepository
-    Application --> SqliteRunRepository
+    Application --> SqliteStore
     Application --> MemoryRunQueue
     Application --> SseEventPublisher
     Application --> SystemClock
@@ -197,9 +194,9 @@ if __name__ == "__main__":
     main()
 ```
 
-`bootstrap.main()` should parse configuration, construct `Application`, and
-start the HTTP server. No repository, queue, or handler construction should
-occur in `Dashboard.py`.
+`bootstrap.main()` parses configuration, constructs `Application`, and starts
+the HTTP server. No repository, queue, or handler construction occurs in
+`Dashboard.py`.
 
 ### 2. Domain Models and Policies
 
@@ -224,13 +221,13 @@ class RunRepository(Protocol):
     def last_values(self, workflow: str) -> dict[str, float]: ...
 ```
 
-`SqliteRunRepository` owns connection setup, schema creation, SQL statements,
+`SqliteStore` owns connection setup, schema creation, SQL statements,
 row mapping, retention cleanup, and transaction boundaries. It must not know
 about HTTP status codes or SSE formatting.
 
-The current `Store` should be split into check and run repository behavior.
-During migration, both adapters may share a private SQLite session helper, but
-that helper must not become a new global service locator.
+The current `SqliteStore` implements both focused repository protocols. A future
+change may split it into separate check and run adapters, but that is optional
+and must preserve the shared connection, transaction, and retention behavior.
 
 ### 4. Application Services
 
@@ -320,13 +317,11 @@ infrastructure is selected only in the composition root.
 
 ## Implementation Order
 
-1. Add domain models and policies with tests copied from current behavior.
-2. Define ports and create SQLite adapters around the existing SQL behavior.
-3. Extract `IngestService`, `DashboardService`, and `CheckService`.
-4. Extract `RunWorker`, simulation, and event publishing.
-5. Reduce the HTTP handler to routing and serialization.
-6. Add `bootstrap.py` and make `Dashboard.py` delegate to it.
-7. Run API and browser smoke tests, then remove obsolete code.
+1. Keep domain models, policies, ports, and services covered by focused tests.
+2. Add repository and HTTP contract tests as new endpoints or check types are added.
+3. Split `SqliteStore` only if separate persistence lifecycles become necessary.
+4. Extract frontend JavaScript and CSS if the browser asset grows significantly.
+5. Remove the `server.py` compatibility wrapper when no callers depend on it.
 
 No module split should be accepted if it changes the existing API payloads,
 status codes, workflow filtering, retention behavior, or SSE event names.

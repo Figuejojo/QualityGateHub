@@ -1,12 +1,21 @@
-"""Pure domain policies."""
+"""\file policies.py
+\brief Pure business policies with no infrastructure dependencies.
+"""
 
 from .models import CheckDefinition, TrendVerdict
 
 
 class TrendPolicy:
-    """Calculates trend direction and severity without infrastructure knowledge."""
+    """\class TrendPolicy
+    \brief Calculates trend direction and severity.
+    """
 
     def judge(self, check: CheckDefinition, delta):
+        """\brief Evaluate a numeric change against a check definition.
+        \param check Check configuration containing polarity and thresholds.
+        \param delta Numeric difference from the baseline, or ``None``.
+        \return TrendVerdict containing direction and severity.
+        """
         if delta is None:
             return TrendVerdict(None, "none")
         if abs(delta) <= check.tolerance + 1e-9:
@@ -20,7 +29,9 @@ class TrendPolicy:
 
 
 class StatusPolicy:
-    """Normalizes statuses accepted by the public ingest API."""
+    """\class StatusPolicy
+    \brief Normalizes statuses accepted by the public ingest API.
+    """
 
     ALIASES = {
         "pass": "pass", "passed": "pass", "success": "pass", "ok": "pass",
@@ -29,4 +40,8 @@ class StatusPolicy:
     }
 
     def normalize(self, value):
+        """\brief Convert an external status alias to ``pass``, ``fail``, or ``skip``.
+        \param value Raw status supplied by a pipeline.
+        \return Normalized status, or ``None`` when unsupported.
+        """
         return self.ALIASES.get(str(value or "").strip().lower())
