@@ -122,7 +122,7 @@
   <header class="top">
     <div>
       <h1>Quality gates</h1>
-      <p class="sub">Last 15 pushes, oldest on the left</p>
+      <p class="sub">Last 15 pushes, newest on the left</p>
     </div>
     <div class="status" aria-live="polite">
       <span class="dot" id="dot"></span><span id="conn">Connecting</span>
@@ -254,8 +254,8 @@ function cellHtml(c, run, fresh) {
 function render(fresh) {
   const d = state.data;
   const pad = Math.max(SLOTS - d.runs.length, 0);
-  const cols = Array(pad).fill(null).concat(d.runs);         // newest run is always the right-most column
-  const lastIdx = cols.length - 1;
+  const cols = d.runs.slice().reverse().concat(Array(pad).fill(null)); // newest run enters on the left
+  const lastIdx = 0;
   grid.style.setProperty('--cols', cols.length);
 
   let h = '<div class="corner"></div>';
