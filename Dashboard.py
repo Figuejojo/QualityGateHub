@@ -15,7 +15,7 @@ How it works
   POST /api/ingest  ->  validate  ->  in-memory queue  ->  worker thread  ->  SQLite
                                                                          \\->  SSE push to browsers
   GET  /            ->  dashboard page (15 most recent pushes)
-  GET  /api/dashboard?limit=15
+    GET  /api/dashboard?limit=15&workflow=DailyCheck
   GET  /events      ->  Server-Sent Events stream (browser re-renders on each new push)
   POST /api/checks  ->  create / tune a check (label, polarity, noise band, ...)
   POST /api/simulate->  enqueue a random run (used by the demo buttons)
@@ -23,7 +23,7 @@ How it works
 Ingest payload
 --------------
   {
-    "commit": "a1b2c3d", "branch": "develop",            # both optional
+    "workflow": "DailyCheck", "commit": "a1b2c3d", "branch": "develop", # workflow optional
     "run_id": "gha-123456", "timestamp": "2026-09-19T14:03:22Z",   # both optional
     "results": [
       {"check": "build",           "status": "pass"},          # pass_fail  (pass | fail | skipped)
@@ -76,12 +76,14 @@ DEFAULT_CHECKS = [
 ]
 
 CHECK_NAME_RE = re.compile(r"^[A-Za-z0-9_.\-]{1,40}$")
+WORKFLOW_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _.:/\-]{0,59}$")
 STATUS_ALIASES = {
     "pass": "pass", "passed": "pass", "success": "pass", "ok": "pass",
     "fail": "fail", "failed": "fail", "failure": "fail", "error": "fail",
     "skip": "skip", "skipped": "skip", "cancelled": "skip", "canceled": "skip",
 }
 POLARITIES = ("higher_is_better", "lower_is_better")
+DEFAULT_WORKFLOW = "Others"
 
 
 # --------------------------------------------------------------------------------------
@@ -138,12 +140,15 @@ def validate_payload(obj, known_kinds):
         raise ValueError("'results' is limited to 100 entries")
 
     out = {
+        "workflow": str(obj.get("workflow") or DEFAULT_WORKFLOW).strip()[:60],
         "commit": str(obj.get("commit") or "unknown")[:40],
         "branch": str(obj.get("branch") or "")[:80],
         "run_ref": str(obj.get("run_id") or obj.get("run_ref") or "")[:80],
         "timestamp": parse_ts(obj.get("timestamp")),
         "results": [],
     }
+    if not WORKFLOW_NAME_RE.match(out["workflow"]):
+        raise ValueError("'workflow' must be 1-60 chars and start with a letter or number")
     seen = set()
     for i, r in enumerate(results):
         where = "results[%d]" % i
@@ -217,7 +222,8 @@ class Store:
                 CREATE TABLE IF NOT EXISTS runs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     ts TEXT NOT NULL, received_at TEXT NOT NULL,
-                    commit_sha TEXT, branch TEXT, run_ref TEXT
+                    commit_sha TEXT, branch TEXT, run_ref TEXT,
+                    workflow TEXT NOT NULL DEFAULT 'Others'
                 );
                 CREATE TABLE IF NOT EXISTS results (
                     run_id INTEGER NOT NULL, check_name TEXT NOT NULL,
@@ -227,6 +233,9 @@ class Store:
                 );
                 """
             )
+            columns = {r[1] for r in self.db.execute("PRAGMA table_info(runs)")}
+            if "workflow" not in columns:
+                self.db.execute("ALTER TABLE runs ADD COLUMN workflow TEXT NOT NULL DEFAULT 'Others'")
             for i, c in enumerate(DEFAULT_CHECKS):
                 self.db.execute(
                     "INSERT OR IGNORE INTO checks(name,label,kind,polarity,unit,tolerance,fail_delta,position)"
@@ -295,8 +304,8 @@ class Store:
     def add_run(self, p):
         with self.lock:
             cur = self.db.execute(
-                "INSERT INTO runs(ts, received_at, commit_sha, branch, run_ref) VALUES (?,?,?,?,?)",
-                (p["timestamp"], utc_now_iso(), p["commit"], p["branch"], p["run_ref"]),
+                "INSERT INTO runs(ts, received_at, commit_sha, branch, run_ref, workflow) VALUES (?,?,?,?,?,?)",
+                (p["timestamp"], utc_now_iso(), p["commit"], p["branch"], p["run_ref"], p["workflow"]),
             )
             run_id = cur.lastrowid
             for r in p["results"]:
@@ -311,7 +320,8 @@ class Store:
                 if baseline is None and delta is None and value is not None:
                     row = self.db.execute(
                         "SELECT value FROM results WHERE check_name=? AND value IS NOT NULL AND run_id<? "
-                        "ORDER BY run_id DESC LIMIT 1", (chk["name"], run_id)).fetchone()
+                        "AND run_id IN (SELECT id FROM runs WHERE workflow=?) "
+                        "ORDER BY run_id DESC LIMIT 1", (chk["name"], run_id, p["workflow"])).fetchone()
                     baseline = row["value"] if row else None
                 if delta is None and value is not None and baseline is not None:
                     delta = value - baseline
@@ -323,12 +333,17 @@ class Store:
                     " VALUES (?,?,?,?,?,?,?)",
                     (run_id, chk["name"], value, baseline, delta, direction, severity),
                 )
-            # retention: keep the newest `keep` pushes
-            self.db.execute(
-                "DELETE FROM results WHERE run_id IN (SELECT id FROM runs ORDER BY id DESC LIMIT -1 OFFSET ?)",
-                (self.keep,))
-            self.db.execute("DELETE FROM runs WHERE id IN (SELECT id FROM runs ORDER BY id DESC LIMIT -1 OFFSET ?)",
-                            (self.keep,))
+            # Retain an independent history for each workflow.
+            workflows = [r[0] for r in self.db.execute("SELECT DISTINCT workflow FROM runs")]
+            for workflow in workflows:
+                old = self.db.execute(
+                    "SELECT id FROM runs WHERE workflow=? ORDER BY id DESC LIMIT -1 OFFSET ?",
+                    (workflow, self.keep)).fetchall()
+                old_ids = [r[0] for r in old]
+                if old_ids:
+                    marks = ",".join("?" * len(old_ids))
+                    self.db.execute("DELETE FROM results WHERE run_id IN (%s)" % marks, old_ids)
+                    self.db.execute("DELETE FROM runs WHERE id IN (%s)" % marks, old_ids)
             self.db.commit()
             return run_id
 
@@ -336,23 +351,32 @@ class Store:
         with self.lock:
             return self.db.execute("SELECT COUNT(*) FROM runs").fetchone()[0]
 
-    def last_values(self):
+    def last_values(self, workflow=DEFAULT_WORKFLOW):
         """Most recent value seen for each trend check (used by the simulator)."""
         with self.lock:
             rows = self.db.execute(
                 "SELECT check_name, value FROM results WHERE value IS NOT NULL AND run_id IN "
-                "(SELECT MAX(run_id) FROM results WHERE value IS NOT NULL GROUP BY check_name)").fetchall()
+                "(SELECT MAX(run_id) FROM results WHERE value IS NOT NULL AND run_id IN "
+                "(SELECT id FROM runs WHERE workflow=?) GROUP BY check_name)", (workflow,)).fetchall()
             return {r["check_name"]: r["value"] for r in rows}
 
-    def dashboard(self, limit):
+    def dashboard(self, limit, workflow=DEFAULT_WORKFLOW):
         with self.lock:
             checks = [dict(r) for r in self.db.execute("SELECT * FROM checks ORDER BY position, name")]
-            runs = [dict(r) for r in self.db.execute("SELECT * FROM runs ORDER BY id DESC LIMIT ?", (limit,))]
+            workflows = [r[0] for r in self.db.execute("SELECT DISTINCT workflow FROM runs")]
+            if DEFAULT_WORKFLOW not in workflows:
+                workflows.append(DEFAULT_WORKFLOW)
+            workflows.sort(key=lambda name: (name == DEFAULT_WORKFLOW, name.lower()))
+            if workflow not in workflows:
+                workflow = DEFAULT_WORKFLOW
+            runs = [dict(r) for r in self.db.execute(
+                "SELECT * FROM runs WHERE workflow=? ORDER BY id DESC LIMIT ?", (workflow, limit))]
             runs.reverse()
             by_id = {}
             for r in runs:
                 by_id[r["id"]] = {"id": r["id"], "ts": r["ts"], "received_at": r["received_at"],
                                   "commit": r["commit_sha"], "branch": r["branch"], "run_ref": r["run_ref"],
+                                  "workflow": r["workflow"],
                                   "results": {}}
             if by_id:
                 marks = ",".join("?" * len(by_id))
@@ -360,8 +384,9 @@ class Store:
                     by_id[row["run_id"]]["results"][row["check_name"]] = {
                         k: row[k] for k in ("status", "value", "baseline", "delta", "direction", "severity")}
             return {"checks": checks, "runs": [by_id[r["id"]] for r in runs],
-                    "total_runs": self.db.execute("SELECT COUNT(*) FROM runs").fetchone()[0],
-                    "slots": SLOTS}
+                    "total_runs": self.db.execute("SELECT COUNT(*) FROM runs WHERE workflow=?",
+                                   (workflow,)).fetchone()[0],
+                    "slots": SLOTS, "workflow": workflow, "workflows": workflows}
 
 
 # --------------------------------------------------------------------------------------
@@ -414,8 +439,8 @@ def worker():
 # --------------------------------------------------------------------------------------
 # Demo data generator
 # --------------------------------------------------------------------------------------
-def simulate_payload(ts=None):
-    last = STORE.last_values()
+def simulate_payload(ts=None, workflow=DEFAULT_WORKFLOW):
+    last = STORE.last_values(workflow)
     sa = last.get("static_analysis", 42.0)
     cov = last.get("coverage", 71.0)
     sa = max(0, sa + random.choices([-3, -2, -1, 0, 1, 2, 4, 8], [1, 2, 3, 5, 3, 2, 1, 1])[0])
@@ -430,6 +455,7 @@ def simulate_payload(ts=None):
     else:  # a broken build skips everything downstream
         results.append({"check": "unit_test", "status": "skipped"})
     payload = {
+        "workflow": workflow,
         "commit": "%07x" % random.getrandbits(28),
         "branch": random.choice(["develop", "develop", "develop", "feature/uart-dma", "fix/adc-offset"]),
         "results": results,
@@ -493,7 +519,8 @@ class Handler(BaseHTTPRequestHandler):
                 limit = int(parse_qs(url.query).get("limit", [SLOTS])[0])
             except ValueError:
                 limit = SLOTS
-            self._send(200, STORE.dashboard(max(1, min(limit, 100))))
+            workflow = parse_qs(url.query).get("workflow", [DEFAULT_WORKFLOW])[0]
+            self._send(200, STORE.dashboard(max(1, min(limit, 100)), workflow))
         elif url.path == "/api/health":
             self._send(200, {"ok": True, "queued": INGEST_Q.qsize(), "runs": STORE.count_runs()})
         elif url.path == "/events":
@@ -509,11 +536,16 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/ingest":
                 payload = validate_payload(self._read_json(), STORE.check_kinds())
                 INGEST_Q.put(payload)
-                self._send(202, {"queued": True, "commit": payload["commit"], "queue_depth": INGEST_Q.qsize()})
+                self._send(202, {"queued": True, "workflow": payload["workflow"], "commit": payload["commit"],
+                                 "queue_depth": INGEST_Q.qsize()})
             elif path == "/api/simulate":
-                payload = validate_payload(simulate_payload(), STORE.check_kinds())
+                body = self._read_json() if self.headers.get("Content-Length") else {}
+                workflow = body.get("workflow") or DEFAULT_WORKFLOW
+                if not isinstance(workflow, str) or not WORKFLOW_NAME_RE.match(workflow):
+                    raise ValueError("'workflow' must be 1-60 chars and start with a letter or number")
+                payload = validate_payload(simulate_payload(workflow=workflow), STORE.check_kinds())
                 INGEST_Q.put(payload)
-                self._send(202, {"queued": True, "commit": payload["commit"]})
+                self._send(202, {"queued": True, "workflow": payload["workflow"], "commit": payload["commit"]})
             elif path == "/api/checks":
                 self._send(200, STORE.upsert_check(self._read_json()))
                 HUB.publish({"type": "checks"})
@@ -580,6 +612,10 @@ INDEX_HTML = r"""<!doctype html>
   .dot.retry { background: #B58400; }
 
   .tools { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; margin: 0 0 12px; }
+    .tabs { display: flex; gap: 0; align-items: flex-end; margin: 0 0 10px; overflow-x: auto; }
+    .tab { border: 1px solid var(--ink); border-bottom: 0; border-radius: 0; padding: 5px 18px; background: var(--panel); white-space: nowrap; }
+    .tab + .tab { margin-left: -1px; }
+    .tab.active { background: var(--ink); color: #fff; }
   button {
     font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--ink);
     border-radius: 3px; padding: 6px 12px; cursor: pointer;
@@ -679,6 +715,8 @@ INDEX_HTML = r"""<!doctype html>
     </div>
   </header>
 
+    <nav class="tabs" id="workflow-tabs" aria-label="Workflows"></nav>
+
   <div class="tools">
     <button id="send" type="button">Send simulated push</button>
     <label><input type="checkbox" id="auto"> Auto-send every 4 s</label>
@@ -698,6 +736,7 @@ INDEX_HTML = r"""<!doctype html>
        <code>baseline</code>. A new check name adds a row; on its first push you can also send
        <code>label</code>, <code>unit</code>, <code>polarity</code>, <code>tolerance</code> and <code>fail_delta</code>.</p>
 <pre>{
+    "workflow": "DailyCheck",
   "commit": "a1b2c3d",
   "branch": "develop",
   "results": [
@@ -717,7 +756,7 @@ INDEX_HTML = r"""<!doctype html>
 const SLOTS = 15;
 const grid = document.getElementById('grid');
 const tip = document.getElementById('tip');
-const state = { data: null, lastId: null, lastReceived: null };
+const state = { data: null, lastId: null, lastReceived: null, workflow: null };
 
 /* ---------- icons ---------- */
 const SHAPES = {
@@ -833,15 +872,33 @@ function renderLast() {
   el.textContent = 'Last push ' + (newest.commit || '').slice(0, 7) + ', ' + ago + '. ' + d.total_runs + ' stored';
 }
 
-async function load() {
-  const res = await fetch('/api/dashboard?limit=' + SLOTS, { cache: 'no-store' });
+function renderTabs() {
+    const tabs = document.getElementById('workflow-tabs');
+    tabs.innerHTML = (state.data.workflows || []).map(name =>
+        '<button class="tab' + (name === state.workflow ? ' active' : '') + '" type="button" data-workflow="' + esc(name) + '">' + esc(name) + '</button>'
+    ).join('');
+}
+
+async function load(workflow) {
+    const selected = workflow || state.workflow || '';
+    const query = selected ? '&workflow=' + encodeURIComponent(selected) : '';
+    const res = await fetch('/api/dashboard?limit=' + SLOTS + query, { cache: 'no-store' });
   state.data = await res.json();
+    state.workflow = state.data.workflow;
+    renderTabs();
   const runs = state.data.runs;
   const newest = runs.length ? runs[runs.length - 1].id : 0;
   const fresh = state.lastId !== null && newest > state.lastId;
   state.lastId = newest;
   render(fresh);
 }
+
+document.getElementById('workflow-tabs').addEventListener('click', e => {
+    const tab = e.target.closest('[data-workflow]');
+    if (!tab) return;
+    state.lastId = null;
+    load(tab.dataset.workflow);
+});
 
 /* ---------- tooltip ---------- */
 function showTip(cell) {
@@ -874,14 +931,17 @@ function setConn(on) {
 }
 function connect() {
   const es = new EventSource('/events');
-  es.addEventListener('hello', () => { setConn(true); load(); });
-  es.addEventListener('run', load);
+    es.addEventListener('hello', () => { setConn(true); load(state.workflow); });
+    es.addEventListener('run', () => load(state.workflow));
   es.addEventListener('checks', load);
   es.onerror = () => setConn(false);
 }
 
 /* ---------- demo controls ---------- */
-const send = () => fetch('/api/simulate', { method: 'POST' });
+const send = () => fetch('/api/simulate', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ workflow: state.workflow })
+});
 document.getElementById('send').addEventListener('click', send);
 let timer = null;
 document.getElementById('auto').addEventListener('change', e => {

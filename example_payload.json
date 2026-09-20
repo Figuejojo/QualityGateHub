@@ -1,0 +1,12 @@
+{
+  "workflow": "feature",
+  "commit": "a1b2c3d",
+  "branch": "develop",
+  "run_id": "local-test-001",
+  "results": [
+    {"check": "build", "status": "pass"},
+    {"check": "unit_test", "status": "pass"},
+    {"check": "static_analysis", "value": 41},
+    {"check": "coverage", "value": 78.4, "baseline": 77.9}
+  ]
+}
