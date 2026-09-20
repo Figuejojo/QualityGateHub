@@ -83,7 +83,7 @@ STATUS_ALIASES = {
     "skip": "skip", "skipped": "skip", "cancelled": "skip", "canceled": "skip",
 }
 POLARITIES = ("higher_is_better", "lower_is_better")
-DEFAULT_WORKFLOW = "Others"
+DEFAULT_WORKFLOW = "Example"
 
 
 # --------------------------------------------------------------------------------------
