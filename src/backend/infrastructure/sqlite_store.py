@@ -146,6 +146,16 @@ class SqliteStore:
         """
         with self.lock:
             received_at = self.clock.now_iso() if self.clock else utc_now_iso()
+            if command.replace_existing_commit:
+                self.db.execute(
+                    "DELETE FROM results WHERE run_id IN "
+                    "(SELECT id FROM runs WHERE workflow=? AND commit_sha=?)",
+                    (command.workflow, command.commit),
+                )
+                self.db.execute(
+                    "DELETE FROM runs WHERE workflow=? AND commit_sha=?",
+                    (command.workflow, command.commit),
+                )
             cursor = self.db.execute(
                 "INSERT INTO runs(ts, received_at, commit_sha, branch, run_ref, workflow) VALUES (?,?,?,?,?,?)",
                 (command.timestamp, received_at, command.commit, command.branch, command.run_ref, command.workflow),

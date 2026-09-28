@@ -83,6 +83,9 @@ class PayloadValidator:
         workflow = str(obj.get("workflow") or DEFAULT_WORKFLOW).strip()[:60]
         if not WORKFLOW_NAME_RE.match(workflow):
             raise ValueError("'workflow' must be 1-60 chars and start with a letter or number")
+        replace_existing_commit = obj.get("replace_existing_commit", False)
+        if not isinstance(replace_existing_commit, bool):
+            raise ValueError("'replace_existing_commit' must be a boolean")
         normalized = []
         seen = set()
         for index, result in enumerate(results):
@@ -121,6 +124,7 @@ class PayloadValidator:
             run_ref=str(obj.get("run_id") or obj.get("run_ref") or "")[:80],
             timestamp=parse_timestamp(obj.get("timestamp")),
             results=tuple(normalized),
+            replace_existing_commit=replace_existing_commit,
         )
 
     @staticmethod

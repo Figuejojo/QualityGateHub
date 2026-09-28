@@ -182,6 +182,7 @@ curl --fail-with-body --silent --show-error \
   --data '{
     "workflow": "DailyBuild",
     "commit": "a1b2c3d",
+    "replace_existing_commit": true,
     "branch": "develop",
     "run_id": "github-123456",
     "results": [
@@ -201,6 +202,11 @@ curl --fail-with-body --silent --show-error \
       }
     ]
   }'
+
+    Set `replace_existing_commit` to `true` to replace an earlier run with the same
+    commit in the same workflow. This is useful for runner retries: the retried
+    results replace the earlier values instead of adding a duplicate trend point.
+    The option is `false` by default.
 ```
 
 Use a different `workflow` value for each independent pipeline. For example,

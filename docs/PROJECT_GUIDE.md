@@ -124,6 +124,7 @@ Example:
 {
   "workflow": "DailyBuild",
   "commit": "a1b2c3d",
+  "replace_existing_commit": false,
   "branch": "develop",
   "run_id": "gha-123456",
   "results": [
@@ -138,6 +139,8 @@ Example:
 A successful request returns HTTP `202` and queues the run. Status aliases
 include `pass`, `passed`, `success`, `ok`, `fail`, `failed`, `failure`,
 `error`, `skip`, `skipped`, `cancelled`, and `canceled`.
+Set `replace_existing_commit` to `true` to replace an earlier run with the same
+commit in the same workflow. It defaults to `false`.
 
 ### Pass/Fail Checks
 

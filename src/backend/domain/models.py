@@ -76,6 +76,7 @@ class IngestCommand:
     run_ref: str
     timestamp: str
     results: tuple
+    replace_existing_commit: bool = False
 
 
 @dataclass(frozen=True)

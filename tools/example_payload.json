@@ -1,12 +1,13 @@
 {
   "workflow": "DailyBuild",
-  "commit": "a1b2c3d",
+  "commit": "a1b2c34",
+  "replace_existing_commit": true,
   "branch": "develop",
   "run_id": "local-test-001",
   "results": [
     {"check": "build", "status": "pass"},
     {"check": "unit_test", "status": "pass"},
-    {"check": "static_analysis", "value": 41},
-    {"check": "coverage", "value": 78.4, "baseline": 77.9}
+    {"check": "static_analysis", "value": 20},
+    {"check": "coverage", "value": 50, "baseline": 80}
   ]
 }
