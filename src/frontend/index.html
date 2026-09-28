@@ -197,7 +197,10 @@ function iconFor(check, r) {
     if (r.status === 'fail') return svg('circle', 'bad', 'x');
     return svg('circle', 'skip', 'dash');
   }
-  if (!r.direction) return svg('circle', 'none', 'dot');          // first value, nothing to compare with
+  if (!r.direction) {
+    // first value, nothing to compare with yet, but still show the number if we have one
+    return r.value != null ? svg('circle', 'none', null, r.value) : svg('circle', 'none', 'dot');
+  }
   const shape = r.direction === 'up' ? 'up' : r.direction === 'down' ? 'down' : 'same';
     return svg(shape, r.severity, null, r.value);
 }

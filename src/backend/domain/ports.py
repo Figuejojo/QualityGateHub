@@ -21,8 +21,8 @@ class CheckRepository(Protocol):
         """\brief Create or update a check definition."""
         ...
 
-    def list_checks(self):
-        """\brief List registered checks in display order."""
+    def list_checks(self, workflow=None):
+        """\brief List registered checks in display order, optionally scoped to a workflow."""
         ...
 
 

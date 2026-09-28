@@ -88,12 +88,20 @@ class SqliteStore:
             row = self.db.execute("SELECT * FROM checks WHERE name=?", (name,)).fetchone()
             return dict(row) if row else None
 
-    def list_checks(self):
+    def list_checks(self, workflow=None):
         """\brief List checks in dashboard display order.
+        \param workflow When given, only checks with at least one result in that workflow are returned.
         \return List of check dictionaries.
         """
         with self.lock:
-            return [dict(row) for row in self.db.execute("SELECT * FROM checks ORDER BY position, name")]
+            if workflow is None:
+                return [dict(row) for row in self.db.execute("SELECT * FROM checks ORDER BY position, name")]
+            rows = self.db.execute(
+                "SELECT DISTINCT c.* FROM checks c JOIN results r ON r.check_name = c.name "
+                "JOIN runs ru ON ru.id = r.run_id WHERE ru.workflow = ? ORDER BY c.position, c.name",
+                (workflow,),
+            )
+            return [dict(row) for row in rows]
 
     def _register(self, name, kind, config):
         """\brief Register a previously unknown check internally.
@@ -225,6 +233,6 @@ class SqliteStore:
                     by_id[row["run_id"]]["results"][row["check_name"]] = {
                         key: row[key] for key in ("status", "value", "baseline", "delta", "direction", "severity")
                     }
-            return {"checks": self.list_checks(), "runs": [by_id[run["id"]] for run in runs],
+            return {"checks": self.list_checks(workflow), "runs": [by_id[run["id"]] for run in runs],
                     "total_runs": self.db.execute("SELECT COUNT(*) FROM runs WHERE workflow=?", (workflow,)).fetchone()[0],
                     "slots": SLOTS, "workflow": workflow, "workflows": workflows}

@@ -3,12 +3,20 @@
 """
 
 import json
+import sys
 from http.server import BaseHTTPRequestHandler
 from queue import Empty
 from urllib.parse import parse_qs, urlparse
 
 from ..domain.validators import DEFAULT_WORKFLOW, WORKFLOW_NAME_RE
 from .presenters import JsonPresenter, SsePresenter
+
+# Clients (browser tab close, refresh, SSE reconnect) routinely reset or abort
+# the connection mid-read/write; these are expected and not server bugs.
+_EXPECTED_DISCONNECT_ERRNOS = {
+    10053,  # WSAECONNABORTED
+    10054,  # WSAECONNRESET
+}
 
 
 class DashboardHttpHandler(BaseHTTPRequestHandler):
@@ -26,6 +34,15 @@ class DashboardHttpHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         """\brief Suppress default request logging."""
         pass
+
+    def handle_error(self, request, client_address):
+        """\brief Silence tracebacks for expected client disconnects."""
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (ConnectionAbortedError, ConnectionResetError, BrokenPipeError)) or (
+            isinstance(exc, OSError) and exc.errno in _EXPECTED_DISCONNECT_ERRNOS
+        ):
+            return
+        super().handle_error(request, client_address)
 
     def _send(self, code, body, content_type=None):
         """\brief Send a response body with standard dashboard headers.
