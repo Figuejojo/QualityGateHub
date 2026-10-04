@@ -27,6 +27,7 @@
   .dot.retry { background: #B58400; }
 
   .tools { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; margin: 0 0 12px; }
+  .tools[hidden] { display: none; }
     .tabs { display: flex; gap: 0; align-items: flex-end; margin: 0 0 10px; overflow-x: auto; }
     .tab { border: 1px solid var(--ink); border-bottom: 0; border-radius: 0; padding: 5px 18px; background: var(--panel); white-space: nowrap; }
     .tab + .tab { margin-left: -1px; }
@@ -132,7 +133,7 @@
 
     <nav class="tabs" id="workflow-tabs" aria-label="Workflows"></nav>
 
-  <div class="tools">
+  <div class="tools" hidden>
     <button id="send" type="button">Send simulated push</button>
     <label><input type="checkbox" id="auto"> Auto-send every 4 s</label>
   </div>
@@ -303,6 +304,13 @@ async function load(workflow) {
     const res = await fetch('/api/dashboard?limit=' + SLOTS + query, { cache: 'no-store' });
   state.data = await res.json();
     state.workflow = state.data.workflow;
+    const demoControls = document.querySelector('.tools');
+    demoControls.hidden = state.workflow !== 'Example';
+    if (demoControls.hidden) {
+      clearInterval(timer);
+      timer = null;
+      document.getElementById('auto').checked = false;
+    }
     renderTabs();
   const runs = state.data.runs;
   const newest = runs.length ? runs[runs.length - 1].id : 0;
